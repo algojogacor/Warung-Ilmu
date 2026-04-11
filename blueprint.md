@@ -19,6 +19,11 @@ Desain modern, penuh animasi, dan terasa native untuk Gen Z.
 - Search: SQLite FTS5 (built-in Turso)
 - Upload gambar: Cloudinary
 - YouTube embed: react-lite-youtube-embed (lazy, no cookie)
+- Math rendering: KaTeX (remark-math + rehype-katex)
+- Email: Resend (3.000 email/bulan gratis)
+- PWA: next-pwa
+- Drag & drop: @dnd-kit/core (folder bookmark)
+- Email template: @react-email/components
 
 ---
 
@@ -239,7 +244,160 @@ Tampilkan:
 - Validasi: title min 10 char, content min 30 char
 - Preview real-time di sisi kanan (desktop) atau tab (mobile)
 
-### 5. Profil User (`/profile/[userId]`)
+### 5. KaTeX — Matematika & Rumus (`/posts/[id]` + editor)
+Install: `npm install remark-math rehype-katex katex`
+Tambahkan plugin ke MarkdownRenderer:
+```tsx
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
+// tambahkan remarkMath ke remarkPlugins
+// tambahkan rehypeKatex ke rehypePlugins
+```
+User bisa tulis rumus inline `$x^2 + y^2 = r^2$` dan block:
+```
+$$
+\int_0^\infty e^{-x^2} dx = \frac{\sqrt{\pi}}{2}
+$$
+```
+Di markdown editor, tambahkan tombol toolbar "∑" untuk insert
+template rumus. Preview real-time juga render KaTeX.
+Ini WAJIB untuk forum akademik — tanpa ini Matematika dan
+Fisika tidak bisa ditulis dengan benar.
+
+### 6. Folder Bookmark (`/bookmarks`)
+Tambahkan tabel `bookmark_folders`:
+- id (text, PK, cuid2)
+- userId (text, FK -> users)
+- name (text)
+- createdAt (timestamp)
+
+Tambahkan kolom `folderId` (text, nullable FK -> bookmark_folders)
+di tabel `bookmarks`.
+
+Halaman `/bookmarks`:
+- Sidebar kiri: daftar folder + tombol buat folder baru
+- Klik folder → tampilkan bookmark dalam folder itu
+- Drag-and-drop bookmark antar folder (gunakan
+  `@dnd-kit/core` — gratis, ringan)
+- Folder default "Semua Bookmark" tidak bisa dihapus
+- Rename dan hapus folder (bookmark di dalamnya pindah ke
+  "Semua Bookmark" jika folder dihapus)
+
+### 7. Draft Post
+Tambahkan kolom `isDraft` (boolean, default: false) di tabel `posts`.
+
+Logika:
+- Halaman `/posts/new` punya dua tombol: "Simpan Draft" dan
+  "Publikasikan"
+- Draft tidak muncul di feed publik maupun search
+- Draft hanya terlihat di tab "Drafts" di profil pemilik
+- Auto-save draft setiap 30 detik saat user sedang mengetik
+  (gunakan debounce + server action)
+- Saat publikasi, set `isDraft = false` dan `createdAt = now()`
+- Tampilkan indikator "Auto-saved" di editor saat draft tersimpan
+
+### 8. Mention @Username di Komentar
+Implementasi:
+- Saat user mengetik `@` di textarea komentar, muncul dropdown
+  autocomplete username (query ke DB, filter by prefix)
+- Pilih user dari dropdown → insert `@username` ke konten
+- Saat komentar disimpan, parse semua `@username` di konten
+- Untuk setiap mention valid, kirim notifikasi ke user terkait
+  dengan type "mention"
+- Di MarkdownRenderer, render `@username` sebagai link ke profil
+  dengan warna accent
+
+Tambahkan type "mention" ke enum notifications.type.
+
+Keamanan: validasi bahwa username yang di-mention benar-benar
+ada di DB sebelum kirim notifikasi. Batasi max 5 mention per
+komentar untuk mencegah spam.
+
+### 9. Posting Anonim
+Tambahkan kolom `isAnonymous` (boolean, default: false) di
+tabel `posts`.
+
+Logika:
+- Di form buat post, ada toggle "Post sebagai Anonim"
+- Jika `isAnonymous = true`, tampilkan nama "Anonim" dengan
+  avatar generik (SVG default) — authorId tetap tersimpan
+  di DB untuk keperluan moderasi admin
+- Admin bisa lihat siapa sebenarnya di balik post anonim
+- User tidak bisa posting anonim lebih dari 3 kali per hari
+  (anti-abuse rate limit)
+- Post anonim tidak menambah reputasi author
+
+### 10. Post & Komentar Edit History
+Tambahkan kolom `editedAt` (timestamp, nullable) di tabel
+`posts` dan `comments`.
+
+Tambahkan tabel `edit_history`:
+- id (text, PK)
+- postId (text, nullable FK -> posts)
+- commentId (text, nullable FK -> comments)
+- previousContent (text)
+- editedAt (timestamp)
+
+Logika:
+- Saat post/komentar diedit, simpan konten lama ke edit_history
+- Tampilkan label "diedit X menit lalu" di bawah konten
+- Klik label → modal popup tampilkan history perubahan
+- Batasi edit: post hanya bisa diedit dalam 24 jam setelah dibuat.
+  Komentar bisa diedit dalam 15 menit.
+
+### 11. Paste Gambar dari Clipboard
+Di markdown editor, tambahkan event listener `paste`:
+```ts
+editor.addEventListener('paste', async (e) => {
+  const items = Array.from(e.clipboardData?.items ?? [])
+  const imageItem = items.find(item => item.type.startsWith('image/'))
+  if (!imageItem) return
+  e.preventDefault()
+  const file = imageItem.getAsFile()
+  if (!file) return
+  // Upload ke Cloudinary via server action
+  const url = await uploadImageAction(file)
+  // Insert markdown image ke posisi cursor
+  insertAtCursor(`![gambar](${url})`)
+})
+```
+Tampilkan progress upload inline di editor (loading state kecil
+di samping toolbar). Batasi ukuran gambar paste max 5MB.
+
+### 12. Share ke WhatsApp
+Di setiap post, tombol share punya dropdown:
+- Copy Link (existing)
+- Share ke WhatsApp → buka `https://wa.me/?text=` dengan
+  format: `*[Judul Post]* - Warung Ilmu\n\n[URL post]`
+- Share ke Twitter/X → `https://twitter.com/intent/tweet`
+
+Ini growth engine organik terbesar untuk pengguna Indonesia.
+
+### 13. Weekly Digest Email via Resend
+Install: `npm install resend` (free tier: 3.000 email/bulan)
+
+Tambahkan tabel `email_preferences`:
+- userId (text, FK -> users)
+- weeklyDigest (boolean, default: true)
+- updatedAt (timestamp)
+
+Buat Vercel Cron Job (`vercel.json`):
+```json
+{
+  "crons": [{
+    "path": "/api/cron/weekly-digest",
+    "schedule": "0 7 * * 1"
+  }]
+}
+```
+Setiap Senin pagi, kirim email berisi top 5 post minggu lalu
+per subject yang diminati user. Template email dibuat dengan
+React Email (`npm install @react-email/components`).
+
+Tambahkan env: `RESEND_API_KEY=`
+
+### 14. Profil User (`/profile/[userId]`)
 - Avatar, nama, bio, tanggal bergabung
 - Statistik: total post, komentar, reputasi, jawaban diterima
 - Tab: Posts | Komentar | Bookmarks (bookmarks private)
@@ -291,7 +449,150 @@ Akses hanya role "admin".
 
 ---
 
-## Tambahan Tech Stack & Schema
+## Keamanan — Wajib Diimplementasikan Semua
+
+### 1. Input Sanitization & Validasi
+Gunakan `zod` untuk validasi semua input di server action
+sebelum diproses:
+```ts
+import { z } from 'zod'
+
+const createPostSchema = z.object({
+  title: z.string().min(10).max(200).trim(),
+  content: z.string().min(30).max(50000).trim(),
+  type: z.enum(['discussion', 'question', 'tip', 'summary']),
+  subjectId: z.string().cuid2(),
+  tags: z.array(z.string().max(30)).max(5),
+  isDraft: z.boolean().default(false),
+  isAnonymous: z.boolean().default(false),
+})
+```
+Terapkan schema zod di SEMUA server action — post, komentar,
+profil, bookmark, dll. Jangan pernah trust input user tanpa
+validasi.
+
+### 2. Auth Guard di Setiap Server Action
+Setiap server action yang butuh login harus selalu validasi
+session di baris pertama:
+```ts
+export async function createPostAction(data: unknown) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) throw new Error('Unauthorized')
+  // lanjut proses...
+}
+```
+Jangan andalkan middleware saja — validasi session langsung
+di dalam action sebagai defense in depth.
+
+### 3. CSRF Protection
+Better Auth sudah handle CSRF untuk session-based auth.
+Pastikan semua mutasi dilakukan via POST (server action),
+bukan GET. Jangan expose operasi mutasi via GET parameter.
+
+### 4. Rate Limiting per Route
+Implementasikan rate limiting di level middleware Next.js
+menggunakan `upstash/ratelimit` (free tier) atau implementasi
+sederhana berbasis Turso:
+
+Buat tabel `rate_limits`:
+- key (text, PK) — format: "action:userId" atau "action:ip"
+- count (integer)
+- resetAt (timestamp)
+
+Rate limit per aksi:
+- Buat post: 10 post/jam per user
+- Buat komentar: 30 komentar/jam per user
+- Vote: 100 vote/jam per user
+- Register: 5 percobaan/jam per IP
+- Login: 10 percobaan/15 menit per IP
+- Upload gambar: 20 upload/jam per user
+- Post anonim: 3 post anonim/hari per user
+- Mention: max 5 mention per komentar
+- Edit post: max 10 edit per post
+
+Kembalikan error `429 Too Many Requests` dengan pesan ramah
+dan waktu reset ("Coba lagi dalam 5 menit ya 🙏").
+
+### 5. File Upload Security (Gambar)
+Di server action upload gambar ke Cloudinary:
+- Validasi MIME type: hanya `image/jpeg`, `image/png`,
+  `image/gif`, `image/webp` yang diterima
+- Validasi ukuran: maksimal 5MB
+- Jangan pernah execute atau serve file yang diupload langsung
+- Gunakan Cloudinary transformation untuk strip metadata EXIF
+  dan resize otomatis (mencegah zip bomb lewat gambar raksasa)
+- Generate nama file acak di Cloudinary, jangan gunakan
+  nama file asli dari user
+
+```ts
+// Di server action upload
+const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+if (!allowedTypes.includes(file.type)) {
+  throw new Error('Tipe file tidak didukung')
+}
+if (file.size > 5 * 1024 * 1024) {
+  throw new Error('Ukuran file maksimal 5MB')
+}
+```
+
+### 6. XSS Prevention
+- React sudah escape HTML secara default — jangan gunakan
+  `dangerouslySetInnerHTML` kecuali untuk output
+  `react-markdown` yang sudah disanitasi
+- Tambahkan `rehype-sanitize` ke pipeline markdown renderer
+  untuk strip tag HTML berbahaya dari konten user:
+  ```ts
+  import rehypeSanitize from 'rehype-sanitize'
+  // tambahkan ke rehypePlugins sebelum rehype-highlight
+  ```
+- Content Security Policy header: sudah dihandle Vercel,
+  tapi tambahkan header via `next.config.js`:
+  ```js
+  headers: [{ key: 'X-Content-Type-Options', value: 'nosniff' }]
+  ```
+
+### 7. SQL Injection Prevention
+Drizzle ORM menggunakan parameterized queries secara default —
+tidak ada raw SQL kecuali FTS5. Untuk query FTS5, gunakan
+parameter binding, JANGAN string concatenation:
+```ts
+// BENAR
+db.run(sql`SELECT * FROM posts_fts WHERE posts_fts MATCH ${query}`)
+// SALAH — jangan pernah lakukan ini
+db.run(`SELECT * FROM posts_fts WHERE posts_fts MATCH '${query}'`)
+```
+
+### 8. Sensitive Data Protection
+- Jangan pernah return `passwordHash` atau field sensitif di
+  response API
+- `authorId` post anonim tidak boleh ter-expose di client —
+  gunakan select eksplisit di Drizzle, jangan `select *`
+- Session token hanya di cookie HttpOnly, tidak di localStorage
+- Environment variable tidak boleh ter-expose ke client
+  (hanya variabel dengan prefix `NEXT_PUBLIC_` yang boleh
+  ada di browser)
+
+### 9. Audit Log untuk Admin
+Tambahkan tabel `audit_logs`:
+- id (text, PK)
+- adminId (text, FK -> users)
+- action (text) — "ban_user" | "delete_post" | "resolve_report" | dll
+- targetId (text) — ID entitas yang dimodifikasi
+- targetType (text) — "user" | "post" | "comment"
+- metadata (text) — JSON string detail tambahan
+- createdAt (timestamp)
+
+Setiap aksi admin (hapus post, ban user, resolve report) wajib
+dicatat ke tabel ini. Tampilkan di halaman admin `/admin/logs`.
+
+### 10. Dependency Security
+- Jalankan `npm audit` sebelum deploy
+- Tambahkan ke `package.json` script: `"audit": "npm audit --audit-level=high"`
+- Gunakan dependabot atau Vercel's built-in security alerts
+- Pin semua dependency ke versi exact di `package.json`
+  (hindari `^` atau `~` untuk dependency kritis)
+
+---
 
 ### FTS5 Trigger (wajib di migrasi Drizzle)
 Buat trigger SQL ini di file migrasi Drizzle agar `posts_fts`
@@ -345,37 +646,139 @@ di tabel `users`. Logika:
 - Ini lebih efektif dari blokir total karena spammer tidak sadar
   mereka sudah dibanned dan tidak langsung buat akun baru
 
-### AI Content Moderation (Opsional tapi disarankan)
-Buat server action `server/actions/moderation.ts` yang dipanggil
-sebelum menyimpan post baru ke database:
+### AI Content Moderation — Multi-Provider Rotation (100% Gratis)
 
+Gunakan rotasi 3 provider gratis dengan fallback otomatis.
+Semua provider kompatibel dengan OpenAI SDK sehingga kode
+bisa digunakan ulang hanya dengan ganti `baseURL` dan `apiKey`.
+
+**Provider dan limitnya (hasil riset April 2026):**
+- **Groq**: gratis permanen, 30 RPM, 14.400 RPD untuk Llama 3.1 8B
+- **Cohere**: gratis permanen, 20 RPM, 1.000 request/bulan
+- **GitHub Models**: gratis permanen, 10–15 RPM, 50–150 RPD
+
+Strategi: Groq sebagai primary (paling cepat dan limit tertinggi),
+Cohere sebagai secondary, GitHub Models sebagai last resort.
+Jika semua gagal, fallback ke `isSafe: true` agar user tidak
+diblokir karena masalah eksternal.
+
+Tambahkan ke `.env`:
+```env
+GROQ_API_KEY_1=
+GROQ_API_KEY_2=
+GROQ_API_KEY_3=
+GROQ_API_KEY_4=
+GROQ_API_KEY_5=
+GROQ_API_KEY_6=
+GROQ_API_KEY_7=
+GROQ_API_KEY_8=
+GROQ_API_KEY_9=
+GROQ_API_KEY_10=
+COHERE_API_KEY=
+GITHUB_MODELS_TOKEN=
+```
+
+Buat `lib/ai-moderation.ts`:
 ```ts
-async function checkContentModeration(content: string): Promise<{
+interface ModerationResult {
   isSafe: boolean
   reason?: string
-}> {
-  const response = await fetch('https://api.together.xyz/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.TOGETHER_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'meta-llama/Llama-3-8b-chat-hf',
-      messages: [{
-        role: 'user',
-        content: `Apakah teks berikut mengandung kata kasar, SARA, atau konten tidak pantas untuk platform edukasi pelajar SMA? Jawab hanya dengan JSON: {"isSafe": true/false, "reason": "alasan jika tidak aman"}.\n\nTeks: ${content}`
-      }],
-      max_tokens: 100,
+}
+
+const PROMPT = (content: string) =>
+  `Apakah teks berikut mengandung kata kasar, ujaran kebencian, SARA, atau konten tidak pantas untuk platform edukasi pelajar SMA Indonesia? Jawab HANYA dengan JSON tanpa penjelasan lain: {"isSafe": true, "reason": ""} atau {"isSafe": false, "reason": "alasan singkat"}.\n\nTeks: ${content.slice(0, 800)}`
+
+function getGroqKeys(): string[] {
+  return Array.from({ length: 10 }, (_, i) =>
+    process.env[`GROQ_API_KEY_${i + 1}`]
+  ).filter(Boolean) as string[]
+}
+
+async function callOpenAICompatible(
+  baseURL: string,
+  apiKey: string,
+  model: string,
+  content: string
+): Promise<string | null> {
+  try {
+    const res = await fetch(`${baseURL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: PROMPT(content) }],
+        max_tokens: 100,
+      }),
+      signal: AbortSignal.timeout(5000), // 5 detik timeout
     })
-  })
-  // parse response dan return
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.choices?.[0]?.message?.content ?? null
+  } catch {
+    return null
+  }
+}
+
+export async function checkContentModeration(
+  content: string
+): Promise<ModerationResult> {
+  // 1. Coba semua Groq keys (fastest, highest limits)
+  for (const key of getGroqKeys()) {
+    const result = await callOpenAICompatible(
+      'https://api.groq.com/openai/v1',
+      key,
+      'llama-3.1-8b-instant',
+      content
+    )
+    if (result) {
+      try { return JSON.parse(result.trim()) } catch {}
+    }
+  }
+
+  // 2. Fallback ke Cohere (20 RPM, 1K/bulan)
+  if (process.env.COHERE_API_KEY) {
+    const result = await callOpenAICompatible(
+      'https://api.cohere.com/compatibility/v1',
+      process.env.COHERE_API_KEY,
+      'command-r',
+      content
+    )
+    if (result) {
+      try { return JSON.parse(result.trim()) } catch {}
+    }
+  }
+
+  // 3. Fallback ke GitHub Models (10-15 RPM, 50-150 RPD)
+  if (process.env.GITHUB_MODELS_TOKEN) {
+    const result = await callOpenAICompatible(
+      'https://models.github.ai/inference',
+      process.env.GITHUB_MODELS_TOKEN,
+      'meta/Llama-3.1-8B-Instruct',
+      content
+    )
+    if (result) {
+      try { return JSON.parse(result.trim()) } catch {}
+    }
+  }
+
+  // 4. Semua provider gagal — jangan blokir user
+  return { isSafe: true }
 }
 ```
 
-Tambahkan `TOGETHER_API_KEY` ke environment variables.
-Jika `isSafe = false`, kembalikan error ke user dengan pesan
-yang ramah sebelum post disimpan.
+Panggil di server action `post.ts` sebelum insert ke DB.
+Jika `isSafe = false`, return error dengan pesan:
+"Konten kamu mengandung hal yang tidak sesuai komunitas.
+Coba periksa kembali ya! 🙏"
+
+**Cara dapat token gratis:**
+- Groq: daftar di console.groq.com (bisa buat hingga 10 akun)
+- Cohere: daftar di dashboard.cohere.com → Generate Trial Key
+- GitHub Models: GitHub Settings → Developer Settings →
+  Personal Access Token → beri permission "Models: Read-only"
 
 ---
 
@@ -700,7 +1103,19 @@ CLOUDINARY_CLOUD_NAME=
 CLOUDINARY_API_KEY=
 CLOUDINARY_API_SECRET=
 NEXT_PUBLIC_APP_URL=
-TOGETHER_API_KEY=
+RESEND_API_KEY=
+GROQ_API_KEY_1=
+GROQ_API_KEY_2=
+GROQ_API_KEY_3=
+GROQ_API_KEY_4=
+GROQ_API_KEY_5=
+GROQ_API_KEY_6=
+GROQ_API_KEY_7=
+GROQ_API_KEY_8=
+GROQ_API_KEY_9=
+GROQ_API_KEY_10=
+COHERE_API_KEY=
+GITHUB_MODELS_TOKEN=
 ```
 
 ---
@@ -728,20 +1143,66 @@ Buat `lib/db/seed.ts`:
 6. Layout utama: navbar, sidebar, bottom nav mobile,
    dark mode toggle, page transition Framer Motion
 7. Home feed + PostCard + skeleton loader + infinite scroll
-8. Detail post + MarkdownRenderer + YouTubeEmbed detection
+8. Detail post + MarkdownRenderer + YouTubeEmbed + KaTeX
 9. Sistem vote dengan optimistic UI + animasi spring
-10. Sistem bookmark dengan animasi
-11. Sistem komentar + nested reply + accepted answer
-12. Buat post baru: editor + preview + YouTube URL preview
-13. Profil user
-14. Search FTS5
-15. Notifikasi: bell + dropdown + badge animation
-16. Reputasi + badge + animated counter
-17. Leaderboard + stagger animation
-18. Admin dashboard
-19. Semua empty states + error states
-20. Polish animasi keseluruhan, pastikan konsisten
-21. Test responsif mobile + dark mode semua halaman
+10. Sistem bookmark + folder bookmark
+11. Sistem komentar + nested reply + accepted answer + mention
+12. Buat post baru: editor + preview + YouTube preview + KaTeX
+    preview + paste gambar + draft auto-save
+13. Post anonim
+14. Edit post/komentar + edit history
+15. Profil user + streak
+16. Search FTS5
+17. Notifikasi: bell + dropdown + badge animation
+18. Reputasi + badge + animated counter
+19. Leaderboard + stagger animation
+20. Admin dashboard + audit log
+21. PWA manifest + service worker
+22. OG images dengan @vercel/og
+23. Share WhatsApp + copy link
+24. Weekly digest email (Resend + cron)
+25. AI moderation (Groq → Cohere → GitHub Models)
+26. Rate limiting semua endpoint
+27. Semua empty states + error states
+28. Polish animasi, dark mode, responsif mobile
+29. `npm audit` + security review final
+
+---
+
+## PWA (Progressive Web App)
+
+Install: `npm install next-pwa`
+
+Konfigurasi di `next.config.js`:
+```js
+const withPWA = require('next-pwa')({
+  dest: 'public',
+  disable: process.env.NODE_ENV === 'development',
+  register: true,
+  skipWaiting: true,
+})
+module.exports = withPWA({ /* next config */ })
+```
+
+Buat `public/manifest.json`:
+```json
+{
+  "name": "Warung Ilmu",
+  "short_name": "Warung Ilmu",
+  "description": "Forum akademik untuk pelajar Indonesia",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#6366f1",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
+```
+
+Dengan ini, pengguna bisa install Warung Ilmu di homescreen HP
+mereka seperti app sungguhan — tanpa perlu App Store.
 
 ---
 
@@ -749,17 +1210,22 @@ Buat `lib/db/seed.ts`:
 
 - Gunakan server actions untuk semua mutasi data
 - Semua query via Drizzle ORM, raw SQL hanya untuk FTS5
+  dengan parameterized binding — jangan string concatenation
 - Jangan hardcode environment variable apapun
 - Gunakan `cuid2` untuk semua ID entitas
-- Setiap server action validasi session sebelum operasi
-- YouTube embed: gunakan mode no-cookie (youtube-nocookie.com)
-  dan lazy load thumbnail — jangan autoplay
-- Animasi Framer Motion: gunakan `reduced-motion` media query
-  untuk aksesibilitas — wrap semua animasi dengan check
-  `useReducedMotion()` dari Framer Motion
-- Semua animasi harus terasa snappy dan responsif, bukan lambat.
-  Duration maksimal 300ms untuk micro-interaction,
-  200ms untuk transition sederhana
+- Setiap server action validasi session + zod schema sebelum operasi
+- YouTube embed: gunakan mode no-cookie dan lazy load — jangan autoplay
+- Animasi Framer Motion: gunakan `useReducedMotion()` untuk
+  aksesibilitas — semua animasi harus bisa dimatikan
+- Duration animasi: maksimal 300ms micro-interaction,
+  200ms transition sederhana — harus terasa snappy
+- File upload: validasi MIME type + ukuran di server, bukan hanya client
+- Konten markdown: gunakan `rehype-sanitize` sebelum render
+  untuk strip HTML berbahaya
+- Post anonim: authorId tetap disimpan di DB, tidak pernah
+  dikirim ke client kecuali untuk admin
+- Edit history: simpan konten sebelumnya sebelum update
+- Rate limiting: implementasikan di semua endpoint mutasi
+- Jalankan `npm audit` sebelum setiap deploy
 - Implementasikan semua fitur dalam satu branch: `feat/warung-ilmu`
 - Catat semua keputusan teknis di `IMPLEMENTATION_LOG.md`
-```
