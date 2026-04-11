@@ -291,6 +291,94 @@ Akses hanya role "admin".
 
 ---
 
+## Tambahan Tech Stack & Schema
+
+### FTS5 Trigger (wajib di migrasi Drizzle)
+Buat trigger SQL ini di file migrasi Drizzle agar `posts_fts`
+selalu sinkron dengan tabel `posts`:
+
+```sql
+CREATE VIRTUAL TABLE posts_fts USING fts5(id, title, content);
+
+CREATE TRIGGER posts_ai AFTER INSERT ON posts BEGIN
+  INSERT INTO posts_fts(id, title, content)
+  VALUES (new.id, new.title, new.content);
+END;
+
+CREATE TRIGGER posts_au AFTER UPDATE ON posts BEGIN
+  UPDATE posts_fts SET title = new.title, content = new.content
+  WHERE id = old.id;
+END;
+
+CREATE TRIGGER posts_ad AFTER DELETE ON posts BEGIN
+  DELETE FROM posts_fts WHERE id = old.id;
+END;
+```
+
+### Optimistic UI pada Vote
+Gunakan `useOptimistic` dari React 18 untuk vote. Angka score
+harus berubah SEBELUM server action selesai — jangan tunggu
+response server. Contoh pola:
+
+```tsx
+const [optimisticScore, addOptimisticVote] = useOptimistic(
+  voteScore,
+  (current, delta: number) => current + delta
+)
+
+async function handleVote(value: 1 | -1) {
+  addOptimisticVote(value)
+  await voteAction(postId, value)
+}
+```
+
+Terapkan pola yang sama untuk bookmark (optimistic toggle state).
+
+### Shadow Banning
+Tambahkan kolom `isShadowBanned` (boolean, default: false)
+di tabel `users`. Logika:
+- User yang di-shadow ban tetap bisa login dan post seperti biasa
+- Di semua query fetch posts/comments, tambahkan filter:
+  `WHERE author.isShadowBanned = false OR author.id = currentUserId`
+- Dengan begitu hanya user tersebut yang melihat kontennya sendiri
+- Admin bisa toggle shadow ban di halaman user management
+- Ini lebih efektif dari blokir total karena spammer tidak sadar
+  mereka sudah dibanned dan tidak langsung buat akun baru
+
+### AI Content Moderation (Opsional tapi disarankan)
+Buat server action `server/actions/moderation.ts` yang dipanggil
+sebelum menyimpan post baru ke database:
+
+```ts
+async function checkContentModeration(content: string): Promise<{
+  isSafe: boolean
+  reason?: string
+}> {
+  const response = await fetch('https://api.together.xyz/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.TOGETHER_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'meta-llama/Llama-3-8b-chat-hf',
+      messages: [{
+        role: 'user',
+        content: `Apakah teks berikut mengandung kata kasar, SARA, atau konten tidak pantas untuk platform edukasi pelajar SMA? Jawab hanya dengan JSON: {"isSafe": true/false, "reason": "alasan jika tidak aman"}.\n\nTeks: ${content}`
+      }],
+      max_tokens: 100,
+    })
+  })
+  // parse response dan return
+}
+```
+
+Tambahkan `TOGETHER_API_KEY` ke environment variables.
+Jika `isSafe = false`, kembalikan error ke user dengan pesan
+yang ramah sebelum post disimpan.
+
+---
+
 ## YouTube Embed — Implementasi Detail
 
 Install: `npm install react-lite-youtube-embed`
@@ -302,6 +390,7 @@ export function extractYouTubeId(url: string): string | null {
     /youtube\.com\/watch\?v=([^&]+)/,
     /youtu\.be\/([^?]+)/,
     /youtube\.com\/embed\/([^?]+)/,
+    /youtube\.com\/shorts\/([^?]+)/,   // YouTube Shorts
   ]
   for (const pattern of patterns) {
     const match = url.match(pattern)
@@ -523,8 +612,65 @@ Jangan tampilkan halaman kosong polos. Setiap empty state punya:
 - Deskripsi singkat
 - CTA button (misalnya "Mulai diskusi pertama")
 
-### Dark Mode
-- Implementasikan dengan `next-themes`
+### Reading Time
+Di `PostCard`, hitung dan tampilkan estimasi waktu baca.
+Rumus standar: `Math.ceil(wordCount / 200)` menit.
+Tampilkan sebagai "3 mnt baca" di sebelah timestamp.
+Sangat berguna untuk post tipe "summary" dan "tip".
+
+### Mobile Bottom Navigation
+Bottom nav untuk mobile wajib ada animasi spring Framer Motion
+saat berpindah tab. Item: Home, Search, Notifications, Profile.
+Gunakan indikator aktif berupa pill yang bergerak smooth
+menggunakan `layoutId` Framer Motion (shared layout animation):
+
+```tsx
+{activeTab === item.id && (
+  <motion.div
+    layoutId="bottom-nav-indicator"
+    className="absolute inset-0 bg-primary/10 rounded-xl"
+    transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+  />
+)}
+```
+
+### Open Graph Images
+Gunakan `@vercel/og` untuk generate OG image dinamis.
+Buat `app/posts/[id]/opengraph-image.tsx`:
+- Tampilkan judul post (max 2 baris, font besar)
+- Avatar + nama author
+- Subject badge dengan warna
+- Logo/nama "Warung Ilmu"
+- Background gradient sesuai subject color
+
+Saat link post dibagikan ke WhatsApp atau Instagram Story,
+gambar preview otomatis ter-generate dengan konten post.
+
+---
+
+## Gamifikasi & Streak
+
+Tambahkan tabel `streaks` di database:
+- id (text, PK)
+- userId (text, FK -> users)
+- currentStreak (integer, default: 0)
+- longestStreak (integer, default: 0)
+- lastActivityDate (text) — format YYYY-MM-DD
+- updatedAt (timestamp)
+
+Logika streak:
+- Setiap kali user membuat post atau komentar, cek apakah
+  `lastActivityDate` adalah kemarin → increment `currentStreak`
+- Jika lebih dari 1 hari absen → reset `currentStreak` ke 1
+- Update `longestStreak` jika currentStreak lebih tinggi
+
+Tampilkan di profil user:
+- 🔥 icon + angka streak hari ini
+- Badge khusus untuk milestone: 7 hari, 30 hari, 100 hari
+- Animasi flame yang bergerak saat streak aktif (CSS keyframes)
+
+Tambahkan kolom `currentStreak` dan `longestStreak` sebagai
+info tambahan di leaderboard untuk menambah dimensi kompetisi.
 - Pastikan SEMUA komponen terlihat baik di dark mode
 - Dark mode default untuk user baru (trendy untuk Gen Z)
 - Simpan preferensi di localStorage
@@ -554,6 +700,7 @@ CLOUDINARY_CLOUD_NAME=
 CLOUDINARY_API_KEY=
 CLOUDINARY_API_SECRET=
 NEXT_PUBLIC_APP_URL=
+TOGETHER_API_KEY=
 ```
 
 ---
