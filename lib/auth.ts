@@ -1,0 +1,20 @@
+import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { db } from "./db";
+
+export const auth = betterAuth({
+  database: drizzleAdapter(db, {
+    provider: "sqlite",
+  }),
+  emailAndPassword: {
+    enabled: true,
+  },
+  socialProviders: {
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID || "placeholder_id",
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "placeholder_secret",
+    },
+  },
+  secret: process.env.BETTER_AUTH_SECRET || "my_super_secret_dev_key",
+  baseURL: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+});
