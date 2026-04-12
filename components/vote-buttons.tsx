@@ -12,13 +12,6 @@ interface VoteButtonsProps {
   initialScore: number
   userVote: 1 | -1 | 0
   isLoggedIn: boolean
-}
-
-interface VoteButtonsProps {
-  postId: string
-  initialScore: number
-  userVote: 1 | -1 | 0
-  isLoggedIn: boolean
   isComment?: boolean
 }
 

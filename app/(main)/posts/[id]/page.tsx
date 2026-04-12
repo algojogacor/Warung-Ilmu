@@ -12,6 +12,7 @@ import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { CommentsSection } from "@/components/comments-section"
 import { desc } from "drizzle-orm"
+import { PostActionButtons } from "@/components/post-action-buttons"
 
 export default async function PostDetailPage({ params }: { params: { id: string } }) {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -48,11 +49,17 @@ export default async function PostDetailPage({ params }: { params: { id: string 
   // Usually this is rate-limited or handled separately, but we do it simply here.
   await db.update(posts).set({ viewCount: post.viewCount + 1 }).where(eq(posts.id, post.id))
 
-  // Determine user's vote
+  // Determine user's interactions
   let userVote: 1 | -1 | 0 = 0
+  let isBookmarkedInitial = false
   if (userId) {
     const [vote] = await db.select().from(votes).where(and(eq(votes.postId, post.id), eq(votes.userId, userId)))
     if (vote) userVote = vote.value as 1 | -1
+
+    // Lazy import bookmarks to avoid circular dependency in Drizzle if any
+    const { bookmarks } = await import("@/lib/db/schema")
+    const [bm] = await db.select().from(bookmarks).where(and(eq(bookmarks.postId, post.id), eq(bookmarks.userId, userId)))
+    if (bm) isBookmarkedInitial = true
   }
 
   // Fetch Comments
@@ -153,6 +160,8 @@ export default async function PostDetailPage({ params }: { params: { id: string 
         <div className="pt-2">
           <MarkdownRenderer content={post.content} />
         </div>
+
+        <PostActionButtons postId={post.id} isBookmarkedInitial={isBookmarkedInitial} />
 
         {/* Comment Section */}
         <div className="border-t border-border pt-8 mt-12">

@@ -1,10 +1,14 @@
-export default function PlaceholderPage() {
-  return (
-    <div className="py-20 flex flex-col items-center justify-center text-center">
-      <h1 className="text-3xl font-bold mb-4">Fitur Segera Hadir</h1>
-      <p className="text-muted-foreground max-w-md">
-        Halaman ini sedang dalam tahap pengembangan dan akan segera bisa digunakan. Pantau terus update selanjutnya!
-      </p>
-    </div>
-  )
+import { redirect } from "next/navigation"
+import { auth } from "@/lib/auth"
+import { headers } from "next/headers"
+
+export const dynamic = "force-dynamic"
+
+export default async function ProfileRedirectPage() {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (session?.user) {
+    redirect(`/profile/${session.user.id}`)
+  } else {
+    redirect("/login")
+  }
 }

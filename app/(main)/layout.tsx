@@ -1,6 +1,9 @@
 import { PageTransition } from "@/components/page-transition"
 import { MainNav } from "@/components/main-nav"
 import { BottomNav } from "@/components/bottom-nav"
+import React from "react"
+
+export const dynamic = "force-dynamic"
 
 export default function MainLayout({
   children,

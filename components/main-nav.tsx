@@ -8,6 +8,7 @@ import { Moon, Sun, PenSquare, LogOut } from "lucide-react"
 import { useTheme } from "next-themes"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { NotificationBellWrapper } from "./notification-bell-wrapper"
 
 export function MainNav() {
   const pathname = usePathname()
@@ -55,7 +56,7 @@ export function MainNav() {
             variant="ghost"
             size="icon"
             aria-label="Toggle theme"
-            className="mr-2"
+            className="mr-2 hidden sm:inline-flex"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           >
             <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
@@ -65,6 +66,7 @@ export function MainNav() {
 
           {session?.user ? (
             <>
+              <NotificationBellWrapper userId={session.user.id} />
               <Button asChild variant="default" size="sm" className="hidden md:flex bg-indigo-600 hover:bg-indigo-700">
                 <Link href="/posts/new">
                   <PenSquare className="mr-2 h-4 w-4" />
