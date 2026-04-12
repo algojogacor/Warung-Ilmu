@@ -23,3 +23,7 @@
 - Removed overly aggressive `rehype-sanitize` configuration to allow KaTeX and syntax highlighting.
 - Added `aria-label` attributes to the Voting Buttons and Markdown Toolbar for accessibility standards compliance.
 - Filled missing navigation pages (`/search`, `/bookmarks`, `/subjects`, `/leaderboard`, etc.) with informative "Coming Soon" components instead of yielding 404s.
+
+## Search & Bookmarks Refinement
+- Added regex sanitization in `app/(main)/search/page.tsx` for FTS5 queries to strip control characters to prevent SQLite syntax crashes.
+- Simplified Drag and Drop folder structure to improve code legibility and reliability under React strict mode.

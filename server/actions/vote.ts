@@ -7,7 +7,7 @@ import { headers } from "next/headers"
 import { eq, and } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 
-export async function voteAction(postId: string, value: 1 | -1) {
+export async function voteAction(postId: string, value: 1 | -1, isComment: boolean = false) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) throw new Error("Unauthorized")
 
@@ -17,7 +17,12 @@ export async function voteAction(postId: string, value: 1 | -1) {
   const [existingVote] = await db
     .select()
     .from(votes)
-    .where(and(eq(votes.userId, userId), eq(votes.postId, postId)))
+    .where(
+      and(
+        eq(votes.userId, userId),
+        isComment ? eq(votes.commentId, postId) : eq(votes.postId, postId)
+      )
+    )
 
   // Let's wrap in transaction
   await db.transaction(async (tx) => {
@@ -38,29 +43,40 @@ export async function voteAction(postId: string, value: 1 | -1) {
       }
     } else {
       // New vote
-      await tx.insert(votes).values({ userId, postId, value })
+      await tx.insert(votes).values(
+        isComment
+          ? { userId, commentId: postId, value }
+          : { userId, postId, value }
+      )
       scoreDelta = value
-      repDelta = value === 1 ? 10 : -2
+      repDelta = value === 1 ? (isComment ? 5 : 10) : -1 // Adjust reputation
     }
 
-    // Update Post Score
-    const [post] = await tx.select({ authorId: posts.authorId }).from(posts).where(eq(posts.id, postId))
+    if (isComment) {
+      const { comments } = await import("@/lib/db/schema")
+      const [comment] = await tx.select({ authorId: comments.authorId, voteScore: comments.voteScore }).from(comments).where(eq(comments.id, postId))
 
-    if (post) {
-      // The update expects simple numeric deltas, not direct arithmetic bindings
-      // In SQLite with Drizzle we just fetch current score, and add.
-      // Alternatively we can use raw SQL if needed, but doing it in code for safety
-      const [currPost] = await tx.select({ voteScore: posts.voteScore }).from(posts).where(eq(posts.id, postId))
-      await tx.update(posts).set({ voteScore: currPost.voteScore + scoreDelta }).where(eq(posts.id, postId))
+      if (comment) {
+        await tx.update(comments).set({ voteScore: comment.voteScore + scoreDelta }).where(eq(comments.id, postId))
+        if (comment.authorId !== userId) {
+          const [currUser] = await tx.select({ reputation: users.reputation }).from(users).where(eq(users.id, comment.authorId))
+          if (currUser) await tx.update(users).set({ reputation: currUser.reputation + repDelta }).where(eq(users.id, comment.authorId))
+        }
+      }
+    } else {
+      const [post] = await tx.select({ authorId: posts.authorId, voteScore: posts.voteScore }).from(posts).where(eq(posts.id, postId))
 
-      if (post.authorId !== userId) {
-        // Update user reputation
-        const [currUser] = await tx.select({ reputation: users.reputation }).from(users).where(eq(users.id, post.authorId))
-        await tx.update(users).set({ reputation: currUser.reputation + repDelta }).where(eq(users.id, post.authorId))
+      if (post) {
+        await tx.update(posts).set({ voteScore: post.voteScore + scoreDelta }).where(eq(posts.id, postId))
+        if (post.authorId !== userId) {
+          const [currUser] = await tx.select({ reputation: users.reputation }).from(users).where(eq(users.id, post.authorId))
+          if (currUser) await tx.update(users).set({ reputation: currUser.reputation + repDelta }).where(eq(users.id, post.authorId))
+        }
       }
     }
   })
 
-  revalidatePath(`/posts/${postId}`)
+  // We should revalidate appropriately. Since we don't have the original postId if it's a comment vote, we'll revalidate the root which covers home
+  revalidatePath(`/`)
   revalidatePath(`/`)
 }

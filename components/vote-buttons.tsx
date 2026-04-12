@@ -14,7 +14,15 @@ interface VoteButtonsProps {
   isLoggedIn: boolean
 }
 
-export function VoteButtons({ postId, initialScore, userVote, isLoggedIn }: VoteButtonsProps) {
+interface VoteButtonsProps {
+  postId: string
+  initialScore: number
+  userVote: 1 | -1 | 0
+  isLoggedIn: boolean
+  isComment?: boolean
+}
+
+export function VoteButtons({ postId, initialScore, userVote, isLoggedIn, isComment = false }: VoteButtonsProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
@@ -52,7 +60,7 @@ export function VoteButtons({ postId, initialScore, userVote, isLoggedIn }: Vote
     startTransition(async () => {
       addOptimisticVote(value)
       try {
-        await voteAction(postId, value)
+        await voteAction(postId, value, isComment)
       } catch {
         toast.error("Gagal melakukan vote")
       }

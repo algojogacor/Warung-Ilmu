@@ -1,5 +1,5 @@
 import { db } from "@/lib/db"
-import { posts, users, subjects, votes } from "@/lib/db/schema"
+import { posts, users, subjects, votes, comments } from "@/lib/db/schema"
 import { eq, and } from "drizzle-orm"
 import { notFound } from "next/navigation"
 import { MarkdownRenderer } from "@/components/markdown-renderer"
@@ -10,6 +10,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { VoteButtons } from "@/components/vote-buttons"
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
+import { CommentsSection } from "@/components/comments-section"
+import { desc } from "drizzle-orm"
 
 export default async function PostDetailPage({ params }: { params: { id: string } }) {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -52,6 +54,39 @@ export default async function PostDetailPage({ params }: { params: { id: string 
     const [vote] = await db.select().from(votes).where(and(eq(votes.postId, post.id), eq(votes.userId, userId)))
     if (vote) userVote = vote.value as 1 | -1
   }
+
+  // Fetch Comments
+  const commentsListRaw = await db
+    .select({
+      id: comments.id,
+      content: comments.content,
+      createdAt: comments.createdAt,
+      voteScore: comments.voteScore,
+      isAcceptedAnswer: comments.isAcceptedAnswer,
+      parentId: comments.parentId,
+      author: {
+        id: users.id,
+        name: users.name,
+        image: users.image,
+        reputation: users.reputation,
+      },
+    })
+    .from(comments)
+    .innerJoin(users, eq(comments.authorId, users.id))
+    .where(eq(comments.postId, post.id))
+    .orderBy(desc(comments.isAcceptedAnswer), desc(comments.voteScore), desc(comments.createdAt))
+
+  // Fetch comment votes
+  const commentsList = await Promise.all(
+    commentsListRaw.map(async (c) => {
+      let cUserVote: 1 | -1 | 0 = 0
+      if (userId) {
+        const [cv] = await db.select().from(votes).where(and(eq(votes.commentId, c.id), eq(votes.userId, userId)))
+        if (cv) cUserVote = cv.value as 1 | -1
+      }
+      return { ...c, userVote: cUserVote }
+    })
+  )
 
   return (
     <div className="py-6 flex flex-col md:flex-row gap-8 max-w-5xl mx-auto">
@@ -119,13 +154,16 @@ export default async function PostDetailPage({ params }: { params: { id: string 
           <MarkdownRenderer content={post.content} />
         </div>
 
-        {/* Comment Section placeholder */}
+        {/* Comment Section */}
         <div className="border-t border-border pt-8 mt-12">
           <h2 className="text-2xl font-bold mb-6">Diskusi & Jawaban</h2>
-          {/* Note: Comment feature is separated into its own component in a full app */}
-          <div className="text-center p-8 border rounded-xl bg-card/50 text-muted-foreground">
-            <p>Fitur komentar akan segera hadir. Jadilah yang pertama memberikan solusi!</p>
-          </div>
+          <CommentsSection
+            postId={post.id}
+            postType={post.type}
+            isPostAuthor={post.authorId === userId}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            initialComments={commentsList as any}
+          />
         </div>
       </div>
     </div>
