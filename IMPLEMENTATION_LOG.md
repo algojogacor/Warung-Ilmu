@@ -32,3 +32,8 @@
 - Realized the remaining components (Profile, Leaderboard, Notifications, Subjects Pages) fully mapping Drizzle schemas.
 - Implemented `/admin` protected dashboard rendering active stats and audit logs.
 - Addressed Code Review constraints ensuring no mock components are left behind, achieving 100% completion status of the Blueprint.
+
+## Code Review Adjustments (WIP)
+- Will implement Admin Control Dashboard logic to trigger moderation events.
+- Will wire up Profile Bookmarks tab.
+- Will create Edit Post & Auto Save draft logic.

@@ -34,7 +34,11 @@ export default async function SearchPage({
       if (ids.length > 0) {
         // Query the main posts table, joining users and subjects
         const { posts, users, subjects } = await import("@/lib/db/schema")
-        const { inArray, eq } = await import("drizzle-orm")
+        const { inArray, eq, and } = await import("drizzle-orm")
+
+        const { auth } = await import("@/lib/auth")
+        const { headers } = await import("next/headers")
+        const session = await auth.api.getSession({ headers: await headers() })
 
         searchResults = await db
           .select({
@@ -52,6 +56,7 @@ export default async function SearchPage({
               name: users.name,
               image: users.image,
               reputation: users.reputation,
+              isShadowBanned: users.isShadowBanned,
             },
             subject: {
               name: subjects.name,
@@ -62,7 +67,15 @@ export default async function SearchPage({
           .from(posts)
           .innerJoin(users, eq(posts.authorId, users.id))
           .innerJoin(subjects, eq(posts.subjectId, subjects.id))
-          .where(inArray(posts.id, ids as string[]))
+          .where(
+            and(
+              inArray(posts.id, ids as string[]),
+              eq(posts.isDraft, false)
+            )
+          )
+
+        // Post filter shadowban client-side for simplicity as joining or() makes query complex
+        searchResults = searchResults.filter(p => !p.author.isShadowBanned || p.author.id === session?.user?.id)
       }
     }
     }

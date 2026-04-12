@@ -7,7 +7,11 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import Link from "next/link"
 
 // In Next.js App Router, we export metadata and page configuration directly
-export const revalidate = 60 // ISR: Revalidate every 60 seconds
+import { auth } from "@/lib/auth"
+import { headers } from "next/headers"
+import { or } from "drizzle-orm"
+
+export const dynamic = "force-dynamic"
 
 export default async function HomePage({
   searchParams,
@@ -17,8 +21,18 @@ export default async function HomePage({
   const selectedType = searchParams.type || "all"
   const sort = searchParams.sort || "newest"
 
+  const session = await auth.api.getSession({ headers: await headers() })
+  const userId = session?.user?.id
+
   // Base conditions
   const conditions = [eq(posts.isDraft, false)]
+
+  // Shadowban filter
+  if (userId) {
+    conditions.push(or(eq(users.isShadowBanned, false), eq(posts.authorId, userId))!)
+  } else {
+    conditions.push(eq(users.isShadowBanned, false))
+  }
 
   if (selectedType !== "all") {
     conditions.push(eq(posts.type, selectedType))

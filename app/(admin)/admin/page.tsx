@@ -4,6 +4,7 @@ import { count, eq, desc } from "drizzle-orm"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatDistanceToNow } from "date-fns"
 import { id as localeId } from "date-fns/locale"
+import { AdminActions } from "./admin-actions"
 
 export default async function AdminDashboardPage() {
   const [totalUsers] = await db.select({ value: count() }).from(users)
@@ -49,6 +50,8 @@ export default async function AdminDashboardPage() {
           <CardContent><div className="text-3xl font-bold text-orange-600">{pendingReports.value}</div></CardContent>
         </Card>
       </div>
+
+      <AdminActions />
 
       <div className="space-y-4">
         <h2 className="text-xl font-bold">Audit Logs Terbaru</h2>

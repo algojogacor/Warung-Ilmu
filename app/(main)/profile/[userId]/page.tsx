@@ -1,10 +1,16 @@
 import { db } from "@/lib/db"
-import { users, streaks, posts } from "@/lib/db/schema"
-import { eq } from "drizzle-orm"
+import { users, streaks, posts, comments, subjects, bookmarks } from "@/lib/db/schema"
+import { eq, desc } from "drizzle-orm"
 import { notFound } from "next/navigation"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { format } from "date-fns"
 import { id as localeId } from "date-fns/locale"
+import { PostCard } from "@/components/post-card"
+import { MarkdownRenderer } from "@/components/markdown-renderer"
+import Link from "next/link"
+
+export const dynamic = "force-dynamic"
 
 export default async function ProfilePage({ params }: { params: { userId: string } }) {
   const [user] = await db
@@ -24,9 +30,80 @@ export default async function ProfilePage({ params }: { params: { userId: string
   const [streak] = await db.select().from(streaks).where(eq(streaks.userId, user.id))
 
   const userPosts = await db
-    .select({ id: posts.id })
+    .select({
+      id: posts.id,
+      title: posts.title,
+      content: posts.content,
+      type: posts.type,
+      createdAt: posts.createdAt,
+      viewCount: posts.viewCount,
+      voteScore: posts.voteScore,
+      isSolved: posts.isSolved,
+      isPinned: posts.isPinned,
+      author: {
+        id: users.id,
+        name: users.name,
+        image: users.image,
+        reputation: users.reputation,
+      },
+      subject: {
+        name: subjects.name,
+        color: subjects.color,
+        icon: subjects.icon,
+      },
+    })
     .from(posts)
+    .innerJoin(users, eq(posts.authorId, users.id))
+    .innerJoin(subjects, eq(posts.subjectId, subjects.id))
     .where(eq(posts.authorId, user.id))
+    .orderBy(desc(posts.createdAt))
+
+  const userComments = await db
+    .select({
+      id: comments.id,
+      content: comments.content,
+      createdAt: comments.createdAt,
+      voteScore: comments.voteScore,
+      isAcceptedAnswer: comments.isAcceptedAnswer,
+      post: {
+        id: posts.id,
+        title: posts.title,
+      }
+    })
+    .from(comments)
+    .innerJoin(posts, eq(comments.postId, posts.id))
+    .where(eq(comments.authorId, user.id))
+    .orderBy(desc(comments.createdAt))
+
+  const userBookmarks = await db
+    .select({
+      id: posts.id,
+      title: posts.title,
+      content: posts.content,
+      type: posts.type,
+      createdAt: posts.createdAt,
+      viewCount: posts.viewCount,
+      voteScore: posts.voteScore,
+      isSolved: posts.isSolved,
+      isPinned: posts.isPinned,
+      author: {
+        id: users.id,
+        name: users.name,
+        image: users.image,
+        reputation: users.reputation,
+      },
+      subject: {
+        name: subjects.name,
+        color: subjects.color,
+        icon: subjects.icon,
+      },
+    })
+    .from(bookmarks)
+    .innerJoin(posts, eq(bookmarks.postId, posts.id))
+    .innerJoin(users, eq(posts.authorId, users.id))
+    .innerJoin(subjects, eq(posts.subjectId, subjects.id))
+    .where(eq(bookmarks.userId, user.id))
+    .orderBy(desc(bookmarks.createdAt))
 
   // Simplified badge rank logic
   let badgeLabel = "Pemula"
@@ -77,6 +154,61 @@ export default async function ProfilePage({ params }: { params: { userId: string
           </h3>
           <p className="text-4xl font-bold text-amber-500">{streak?.longestStreak || 0}</p>
         </div>
+      </div>
+
+      <div className="mt-8">
+        <Tabs defaultValue="posts" className="w-full">
+          <TabsList className="grid w-full grid-cols-3 max-w-lg mx-auto mb-8">
+            <TabsTrigger value="posts">Diskusi ({userPosts.length})</TabsTrigger>
+            <TabsTrigger value="comments">Komentar ({userComments.length})</TabsTrigger>
+            <TabsTrigger value="bookmarks">Bookmark ({userBookmarks.length})</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="posts" className="space-y-4">
+            {userPosts.length === 0 ? (
+              <div className="text-center py-20 border rounded-xl bg-card text-muted-foreground">
+                <p>Belum ada diskusi yang dibuat.</p>
+              </div>
+            ) : (
+              userPosts.map(post => <PostCard key={post.id} post={post} />)
+            )}
+          </TabsContent>
+
+          <TabsContent value="comments" className="space-y-4">
+            {userComments.length === 0 ? (
+              <div className="text-center py-20 border rounded-xl bg-card text-muted-foreground">
+                <p>Belum ada komentar yang diberikan.</p>
+              </div>
+            ) : (
+              userComments.map(comment => (
+                <div key={comment.id} className="bg-card border rounded-xl p-4 shadow-sm">
+                   <div className="text-sm text-muted-foreground mb-2 flex items-center gap-2">
+                     Berkomentar pada:
+                     <Link href={`/posts/${comment.post.id}`} className="font-medium text-primary hover:underline">
+                        {comment.post.title}
+                     </Link>
+                     <span className="text-xs ml-auto">
+                        {format(new Date(comment.createdAt), "dd MMM yyyy", { locale: localeId })}
+                     </span>
+                   </div>
+                   <div className="prose prose-sm dark:prose-invert max-w-none border-l-2 border-border pl-4 ml-1">
+                      <MarkdownRenderer content={comment.content} />
+                   </div>
+                </div>
+              ))
+            )}
+          </TabsContent>
+
+          <TabsContent value="bookmarks" className="space-y-4">
+            {userBookmarks.length === 0 ? (
+              <div className="text-center py-20 border rounded-xl bg-card text-muted-foreground">
+                <p>Belum ada bookmark yang disimpan.</p>
+              </div>
+            ) : (
+              userBookmarks.map(post => <PostCard key={post.id} post={post} />)
+            )}
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   )

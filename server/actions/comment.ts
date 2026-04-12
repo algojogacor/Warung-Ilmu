@@ -6,13 +6,19 @@ import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { z } from "zod"
 import { checkContentModeration } from "@/lib/ai-moderation"
-import { eq, like, or } from "drizzle-orm"
+import { processUserStreak } from "./gamification"
+import { eq, like, and } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
 
 const createCommentSchema = z.object({
   postId: z.string().min(1),
   content: z.string().min(2, "Komentar terlalu pendek").max(5000),
   parentId: z.string().optional(),
+})
+
+const editCommentSchema = z.object({
+  commentId: z.string(),
+  content: z.string().min(2).max(5000)
 })
 
 export async function createCommentAction(data: unknown) {
@@ -67,6 +73,8 @@ export async function createCommentAction(data: unknown) {
       })
     }
 
+    await processUserStreak(session.user.id)
+
     revalidatePath(`/posts/${postId}`)
     return { success: true, id: newComment.id }
 
@@ -107,4 +115,35 @@ export async function acceptAnswerAction(commentId: string, postId: string) {
 
   revalidatePath(`/posts/${postId}`)
   return { success: true }
+}
+
+export async function editCommentAction(data: unknown) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) return { error: "Unauthorized" }
+
+  try {
+    const { commentId, content } = editCommentSchema.parse(data)
+
+    const [existing] = await db.select().from(comments).where(and(eq(comments.id, commentId), eq(comments.authorId, session.user.id)))
+    if (!existing) return { error: "Komentar tidak ditemukan atau akses ditolak" }
+
+    const { editHistory } = await import("@/lib/db/schema")
+
+    // Log the old content before edit
+    await db.insert(editHistory).values({
+      commentId,
+      previousContent: existing.content
+    })
+
+    await db.update(comments).set({
+      content,
+      editedAt: new Date()
+    }).where(eq(comments.id, commentId))
+
+    revalidatePath(`/posts/${existing.postId}`)
+    return { success: true }
+  } catch (error) {
+    if (error instanceof z.ZodError) return { error: error.issues[0].message }
+    return { error: "Terjadi kesalahan pada server" }
+  }
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { createPostAction } from "@/server/actions/post"
 import { Card, CardContent } from "@/components/ui/card"
@@ -25,8 +25,75 @@ export default function CreatePostForm({ subjects }: CreatePostFormProps) {
   const [content, setContent] = useState("")
   const [type, setType] = useState<string>("discussion")
   const [subjectId, setSubjectId] = useState<string>("")
+  const [tags, setTags] = useState<string[]>([])
+  const [tagInput, setTagInput] = useState("")
   const [isAnonymous, setIsAnonymous] = useState(false)
   const [loading, setLoading] = useState(false)
+
+  // Basic auto-save draft simulation every 30 seconds if content changes
+  const isDraftSaved = useRef(false)
+  useEffect(() => {
+    if (content.length > 30 && title.length >= 10 && subjectId && !isDraftSaved.current) {
+      const timer = setTimeout(async () => {
+        const toastId = toast.loading("Auto-saving draft...")
+        const res = await createPostAction({
+          title, content, type, subjectId, tags, isDraft: true, isAnonymous
+        })
+        if (!res.error) {
+           toast.success("Draft otomatis disimpan", { id: toastId })
+           isDraftSaved.current = true
+        } else {
+           toast.dismiss(toastId)
+        }
+      }, 30000)
+      return () => clearTimeout(timer)
+    }
+  }, [content, title, subjectId, tags, type, isAnonymous])
+
+  const handleAddTag = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault()
+      const newTag = tagInput.trim().toLowerCase().replace(/[^a-z0-9-]/g, '')
+      if (newTag && !tags.includes(newTag) && tags.length < 3) {
+        setTags([...tags, newTag])
+      }
+      setTagInput("")
+    }
+  }
+
+  const removeTag = (tagToRemove: string) => {
+    setTags(tags.filter(tag => tag !== tagToRemove))
+  }
+
+  const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = Array.from(e.clipboardData.items)
+    const imageItem = items.find(item => item.type.startsWith('image/'))
+
+    if (imageItem) {
+      e.preventDefault()
+      const file = imageItem.getAsFile()
+      if (!file) return
+
+      const toastId = toast.loading("Mengunggah gambar...")
+      try {
+        const formData = new FormData()
+        formData.append("file", file)
+
+        // Let's assume we have an upload server action `uploadImageAction`
+        const { uploadImageAction } = await import("@/server/actions/upload")
+        const res = await uploadImageAction(formData)
+
+        if (res.error) {
+          toast.error(res.error, { id: toastId })
+        } else if (res.url) {
+          toast.success("Gambar berhasil diunggah", { id: toastId })
+          insertText(`![gambar](${res.url})`, "")
+        }
+      } catch {
+        toast.error("Gagal mengunggah gambar", { id: toastId })
+      }
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent, isDraft = false) => {
     e.preventDefault()
@@ -42,6 +109,7 @@ export default function CreatePostForm({ subjects }: CreatePostFormProps) {
       content,
       type,
       subjectId,
+      tags,
       isDraft,
       isAnonymous,
     })
@@ -89,6 +157,28 @@ export default function CreatePostForm({ subjects }: CreatePostFormProps) {
               required
             />
             <p className="text-xs text-muted-foreground">Minimal 10 karakter.</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="tags">Tags (Opsional)</Label>
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              {tags.map(tag => (
+                <span key={tag} className="flex items-center text-xs font-medium px-2.5 py-0.5 rounded-full bg-primary/10 text-primary">
+                  #{tag}
+                  <button type="button" onClick={() => removeTag(tag)} className="ml-1.5 hover:text-red-500 focus:outline-none">
+                    &times;
+                  </button>
+                </span>
+              ))}
+            </div>
+            <Input
+              id="tags"
+              placeholder={tags.length < 3 ? "Tambah tag (Ketik lalu Enter/Koma)..." : "Maksimal 3 tags dicapai."}
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={handleAddTag}
+              disabled={tags.length >= 3}
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -161,10 +251,11 @@ export default function CreatePostForm({ subjects }: CreatePostFormProps) {
                   className="min-h-[300px] font-mono text-sm resize-y"
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
+                  onPaste={handlePaste}
                   required
                 />
                 <p className="text-xs text-muted-foreground mt-2">
-                  Minimal 30 karakter. Auto-save ke draft akan segera hadir.
+                  Minimal 30 karakter. Paste gambar (Ctrl+V) langsung ke area ini untuk upload otomatis.
                 </p>
               </TabsContent>
               <TabsContent value="preview" className="mt-4">
