@@ -5,7 +5,6 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import rehypeHighlight from 'rehype-highlight'
-import rehypeSanitize from 'rehype-sanitize'
 import { YouTubeEmbed } from './youtube-embed'
 import { extractYouTubeId, isYouTubeUrl } from '@/lib/youtube'
 import 'katex/dist/katex.min.css'
@@ -16,7 +15,11 @@ export function MarkdownRenderer({ content }: { content: string }) {
     <div className="prose prose-slate dark:prose-invert max-w-none break-words">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeSanitize, rehypeKatex, rehypeHighlight]}
+        rehypePlugins={[
+          rehypeKatex,
+          rehypeHighlight,
+          // Removed rehypeSanitize to allow katex and highlight.js to preserve their structural classes and nodes.
+        ]}
         components={{
           p({ children, ...props }) {
             // Determine if paragraph is just a standalone youtube URL

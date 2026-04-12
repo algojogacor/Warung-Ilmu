@@ -1,0 +1,133 @@
+import { db } from "@/lib/db"
+import { posts, users, subjects, votes } from "@/lib/db/schema"
+import { eq, and } from "drizzle-orm"
+import { notFound } from "next/navigation"
+import { MarkdownRenderer } from "@/components/markdown-renderer"
+import { SubjectBadge } from "@/components/subject-badge"
+import { formatDistanceToNow } from "date-fns"
+import { id } from "date-fns/locale"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { VoteButtons } from "@/components/vote-buttons"
+import { auth } from "@/lib/auth"
+import { headers } from "next/headers"
+
+export default async function PostDetailPage({ params }: { params: { id: string } }) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  const userId = session?.user?.id
+
+  // Fetch Post
+  const [post] = await db
+    .select({
+      id: posts.id,
+      title: posts.title,
+      content: posts.content,
+      type: posts.type,
+      createdAt: posts.createdAt,
+      viewCount: posts.viewCount,
+      voteScore: posts.voteScore,
+      authorId: posts.authorId,
+      isAnonymous: posts.isAnonymous,
+      authorName: users.name,
+      authorImage: users.image,
+      subjectName: subjects.name,
+      subjectColor: subjects.color,
+      subjectIcon: subjects.icon,
+    })
+    .from(posts)
+    .innerJoin(users, eq(posts.authorId, users.id))
+    .innerJoin(subjects, eq(posts.subjectId, subjects.id))
+    .where(eq(posts.id, params.id))
+
+  if (!post) {
+    notFound()
+  }
+
+  // Increment view count (Simple update on view)
+  // Usually this is rate-limited or handled separately, but we do it simply here.
+  await db.update(posts).set({ viewCount: post.viewCount + 1 }).where(eq(posts.id, post.id))
+
+  // Determine user's vote
+  let userVote: 1 | -1 | 0 = 0
+  if (userId) {
+    const [vote] = await db.select().from(votes).where(and(eq(votes.postId, post.id), eq(votes.userId, userId)))
+    if (vote) userVote = vote.value as 1 | -1
+  }
+
+  return (
+    <div className="py-6 flex flex-col md:flex-row gap-8 max-w-5xl mx-auto">
+      {/* Left side: Vote Buttons */}
+      <div className="hidden md:flex flex-col items-center shrink-0 w-16">
+        <div className="sticky top-20">
+          <VoteButtons
+            postId={post.id}
+            initialScore={post.voteScore}
+            userVote={userVote}
+            isLoggedIn={!!userId}
+          />
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 space-y-8 min-w-0">
+        <header className="space-y-4">
+          <div className="flex items-center gap-3">
+            <SubjectBadge name={post.subjectName} color={post.subjectColor} icon={post.subjectIcon} />
+            <span className="text-sm text-muted-foreground">
+              {formatDistanceToNow(new Date(post.createdAt), { addSuffix: true, locale: id })}
+            </span>
+          </div>
+
+          <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-foreground leading-tight">
+            {post.title}
+          </h1>
+
+          <div className="flex items-center justify-between border-b border-border/50 pb-6">
+            <div className="flex items-center gap-3">
+              <Avatar className="w-10 h-10 ring-2 ring-background">
+                {post.isAnonymous ? (
+                  <AvatarFallback>?</AvatarFallback>
+                ) : (
+                  <>
+                    <AvatarImage src={post.authorImage || ""} />
+                    <AvatarFallback>{post.authorName.slice(0,2)}</AvatarFallback>
+                  </>
+                )}
+              </Avatar>
+              <div className="flex flex-col">
+                <span className="font-semibold text-sm">
+                  {post.isAnonymous ? "Anonim" : post.authorName}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {post.isAnonymous ? "Menyembunyikan identitas" : "Member Warung Ilmu"}
+                </span>
+              </div>
+            </div>
+
+            {/* Mobile Vote Buttons inline */}
+            <div className="md:hidden flex items-center">
+               <VoteButtons
+                postId={post.id}
+                initialScore={post.voteScore}
+                userVote={userVote}
+                isLoggedIn={!!userId}
+              />
+            </div>
+          </div>
+        </header>
+
+        <div className="pt-2">
+          <MarkdownRenderer content={post.content} />
+        </div>
+
+        {/* Comment Section placeholder */}
+        <div className="border-t border-border pt-8 mt-12">
+          <h2 className="text-2xl font-bold mb-6">Diskusi & Jawaban</h2>
+          {/* Note: Comment feature is separated into its own component in a full app */}
+          <div className="text-center p-8 border rounded-xl bg-card/50 text-muted-foreground">
+            <p>Fitur komentar akan segera hadir. Jadilah yang pertama memberikan solusi!</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
