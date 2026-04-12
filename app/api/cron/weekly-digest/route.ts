@@ -6,14 +6,17 @@ import { Resend } from "resend"
 
 const resend = new Resend(process.env.RESEND_API_KEY || "re_test_key")
 
+import { headers } from "next/headers"
+
 export const dynamic = "force-dynamic"
 
 export async function GET() {
-  // Normally: Verify Vercel Cron authentication via req headers
-  // const authHeader = req.headers.get('authorization');
-  // if (authHeader !== `Bearer ${process.env.VERCEL_CRON_SECRET}`) {
-  //   return new Response('Unauthorized', { status: 401 });
-  // }
+  const reqHeaders = await headers()
+  const authHeader = reqHeaders.get('authorization')
+
+  if (authHeader !== `Bearer ${process.env.VERCEL_CRON_SECRET}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
   try {
     // 1. Get top posts from last 7 days

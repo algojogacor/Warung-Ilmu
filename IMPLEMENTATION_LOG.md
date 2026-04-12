@@ -37,3 +37,9 @@
 - Will implement Admin Control Dashboard logic to trigger moderation events.
 - Will wire up Profile Bookmarks tab.
 - Will create Edit Post & Auto Save draft logic.
+
+## Security & Performance Refinements
+- Addressed Code Review constraints: Enforced `VERCEL_CRON_SECRET` in `app/api/cron/weekly-digest/route.ts` to prevent unauthorized execution.
+- Removed hardcoded fallback secret in `lib/auth.ts`.
+- Removed hardcoded admin password in `lib/db/seed.ts` (replaced with environment variable or error).
+- Refactored `app/(main)/posts/[id]/page.tsx` to fetch comment votes in a single batch query, eliminating the N+1 performance anti-pattern.

@@ -27,10 +27,10 @@ export const auth = betterAuth({
   },
   socialProviders: {
     google: {
-      clientId: process.env.GOOGLE_CLIENT_ID || "placeholder_id",
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "placeholder_secret",
+      clientId: process.env.GOOGLE_CLIENT_ID as string,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
     },
   },
-  secret: process.env.BETTER_AUTH_SECRET || "my_super_secret_dev_key",
+  secret: process.env.BETTER_AUTH_SECRET,
   baseURL: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
 });

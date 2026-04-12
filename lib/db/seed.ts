@@ -26,10 +26,15 @@ async function seed() {
   const [adminUser] = await db.select().from(users).where(eq(users.email, "admin@warungilmu.id"));
   let adminId;
   if (!adminUser) {
-    const headers = new Headers();
+    const adminPassword = process.env.ADMIN_SEED_PASSWORD
+    if (!adminPassword) {
+      throw new Error("Missing ADMIN_SEED_PASSWORD environment variable for seeding")
+    }
+
+    const reqHeaders = new Headers();
     const newAdmin = await auth.api.signUpEmail({
-      body: { email: "admin@warungilmu.id", password: "password123", name: "Admin Warung Ilmu" },
-      headers
+      body: { email: "admin@warungilmu.id", password: adminPassword, name: "Admin Warung Ilmu" },
+      headers: reqHeaders
     });
     if(newAdmin?.user) {
       await db.update(users).set({ role: "admin", emailVerified: true }).where(eq(users.id, newAdmin.user.id));

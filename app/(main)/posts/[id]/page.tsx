@@ -1,6 +1,6 @@
 import { db } from "@/lib/db"
 import { posts, users, subjects, votes, comments } from "@/lib/db/schema"
-import { eq, and } from "drizzle-orm"
+import { eq, and, inArray } from "drizzle-orm"
 import { notFound } from "next/navigation"
 import { MarkdownRenderer } from "@/components/markdown-renderer"
 import { SubjectBadge } from "@/components/subject-badge"
@@ -83,17 +83,25 @@ export default async function PostDetailPage({ params }: { params: { id: string 
     .where(eq(comments.postId, post.id))
     .orderBy(desc(comments.isAcceptedAnswer), desc(comments.voteScore), desc(comments.createdAt))
 
-  // Fetch comment votes
-  const commentsList = await Promise.all(
-    commentsListRaw.map(async (c) => {
-      let cUserVote: 1 | -1 | 0 = 0
-      if (userId) {
-        const [cv] = await db.select().from(votes).where(and(eq(votes.commentId, c.id), eq(votes.userId, userId)))
-        if (cv) cUserVote = cv.value as 1 | -1
-      }
-      return { ...c, userVote: cUserVote }
-    })
-  )
+  // Fetch all user's comment votes for this post in a single query
+  let commentVotesMap: Record<string, 1 | -1> = {}
+  if (userId && commentsListRaw.length > 0) {
+    const commentIds = commentsListRaw.map(c => c.id)
+    const userCommentVotes = await db
+      .select({ commentId: votes.commentId, value: votes.value })
+      .from(votes)
+      .where(and(eq(votes.userId, userId), inArray(votes.commentId, commentIds as string[])))
+
+    commentVotesMap = userCommentVotes.reduce((acc, v) => {
+      if (v.commentId) acc[v.commentId] = v.value as 1 | -1
+      return acc
+    }, {} as Record<string, 1 | -1>)
+  }
+
+  const commentsList = commentsListRaw.map(c => ({
+    ...c,
+    userVote: commentVotesMap[c.id] || 0
+  }))
 
   return (
     <div className="py-6 flex flex-col md:flex-row gap-8 max-w-5xl mx-auto">
